@@ -12,6 +12,8 @@ if __name__ == "__main__":
     parser.add_argument("--record_video", action="store_true")
     parser.add_argument("--video_path", type=str, 
                         default="videos/example.mp4")
+    parser.add_argument("--play_speed", type=float, default=1.0,
+                        help="Playback speed multiplier. 0.5 = half speed, 2.0 = double speed.")
                         
     args = parser.parse_args()
     
@@ -23,8 +25,9 @@ if __name__ == "__main__":
     
     motion_data, motion_fps, motion_root_pos, motion_root_rot, motion_dof_pos, motion_local_body_pos, motion_link_body_list = load_robot_motion(robot_motion_path)
     
+    play_fps = motion_fps * args.play_speed
     env = RobotMotionViewer(robot_type=robot_type,
-                            motion_fps=motion_fps,
+                            motion_fps=play_fps,
                             camera_follow=False,
                             record_video=args.record_video, video_path=args.video_path)
     
@@ -33,7 +36,8 @@ if __name__ == "__main__":
         env.step(motion_root_pos[frame_idx], 
                 motion_root_rot[frame_idx], 
                 motion_dof_pos[frame_idx], 
-                rate_limit=True)
+                rate_limit=True,
+                follow_camera=False)
         frame_idx += 1
         if frame_idx >= len(motion_root_pos):
             frame_idx = 0

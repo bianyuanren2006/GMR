@@ -80,6 +80,9 @@ class GeneralMotionRetargeting:
         self.human_scale_table = ik_config["human_scale_table"]
         self.ground = ik_config["ground_height"] * np.array([0, 0, 1])
 
+        # Bodies that should only track yaw (facing direction), ignoring pitch/roll
+        self.yaw_only_bodies = set(ik_config.get("yaw_only_bodies", []))
+
         self.max_iter = 10
 
         self.solver = solver
@@ -270,9 +273,19 @@ class GeneralMotionRetargeting:
         offset_human_data = {}
         for body_name in human_data.keys():
             pos, quat = human_data[body_name]
+            if body_name not in rot_offsets:
+                offset_human_data[body_name] = [pos, quat]
+                continue
             offset_human_data[body_name] = [pos, quat]
             # apply rotation offset first
             updated_quat = (R.from_quat(quat, scalar_first=True) * rot_offsets[body_name]).as_quat(scalar_first=True)
+            # For yaw-only bodies, keep only the facing direction (Z rotation),
+            # zero out pitch (Y) and roll (X) to avoid body sway
+            if body_name in self.yaw_only_bodies:
+                euler = R.from_quat(updated_quat, scalar_first=True).as_euler('ZYX')
+                euler[1] = 0.0  # pitch = 0
+                euler[2] = 0.0  # roll = 0
+                updated_quat = R.from_euler('ZYX', euler).as_quat(scalar_first=True)
             offset_human_data[body_name][1] = updated_quat
             
             local_offset = pos_offsets[body_name]
