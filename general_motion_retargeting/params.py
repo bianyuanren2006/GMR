@@ -25,6 +25,7 @@ ROBOT_XML_DICT = {
     "fourier_gr3": ASSET_ROOT / "fourier_gr3v2_1_1" / "mjcf" / "gr3v2_1_1_dummy_hand.xml",
     "tinker_sdu": ASSET_ROOT / "tinker_lingzu_v3_sdu" / "nano_SDU.xml",
     "mini": ASSET_ROOT / "rl_boy_old_v2" / "mini_v1.xml",
+    "encos_sprint": ASSET_ROOT / "ENCOS-Sprint" / "encos_spriint_v2.xml",
 }
 
 IK_CONFIG_DICT = {
@@ -58,6 +59,7 @@ IK_CONFIG_DICT = {
         "pal_talos": IK_CONFIG_ROOT / "bvh_to_talos.json",
         "tinker_sdu": IK_CONFIG_ROOT / "bvh_lafan1_to_tinker_sdu.json",
         "mini": IK_CONFIG_ROOT / "bvh_lafan1_to_mini.json",
+        "encos_sprint": IK_CONFIG_ROOT / "bvh_lafan1_to_encos_sprint.json",
     },
     "bvh_nokov":{
         "unitree_g1": IK_CONFIG_ROOT / "bvh_nokov_to_g1.json",
@@ -104,6 +106,7 @@ ROBOT_BASE_DICT = {
     "fourier_gr3": "base_link",
     "tinker_sdu": "base_link",
     "mini": "base_link",
+    "encos_sprint": "pelvis",
 }
 
 VIEWER_CAM_DISTANCE_DICT = {
@@ -127,4 +130,5 @@ VIEWER_CAM_DISTANCE_DICT = {
     "fourier_gr3": 2.0,
     "tinker_sdu": 1.5,
     "mini": 1.5,
+    "encos_sprint": 2.5,
 }

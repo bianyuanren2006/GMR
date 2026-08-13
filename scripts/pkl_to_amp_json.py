@@ -58,27 +58,37 @@ def compute_angular_velocity(quats_xyzw, dt):
     return ang_vel
 
 
-def mirror_frame(frame):
-    """Mirror basic frame (20 values): swap left/right, negate yaw(0)/roll(1)."""
-    lp, rp = list(frame[:5]), list(frame[5:10])
-    lv, rv = list(frame[10:15]), list(frame[15:20])
-    mlp = [-rp[0], -rp[1], rp[2], rp[3], rp[4]]
-    mrp = [-lp[0], -lp[1], lp[2], lp[3], lp[4]]
-    mlv = [-rv[0], -rv[1], rv[2], rv[3], rv[4]]
-    mrv = [-lv[0], -lv[1], lv[2], lv[3], lv[4]]
-    return mlp + mrp + mlv + mrv
+def _mirror_side(values, neg_idx):
+    """Negate the given indices (yaw/roll joints) within one side for left-right flip."""
+    out = list(values)
+    for i in neg_idx:
+        if i < len(out):
+            out[i] = -out[i]
+    return out
 
 
-def mirror_frame_gvec(frame):
-    """Mirror extended frame (30 values): negate gvec Y, lateral vel, roll/yaw ang vel."""
+def mirror_frame(frame, half, neg_idx=(0, 1)):
+    """Mirror basic frame: swap left/right, negate yaw/roll joints.
+    frame = [lp(half), rp(half), lv(half), rv(half)]
+    """
+    n = half
+    lp, rp = list(frame[:n]), list(frame[n:2 * n])
+    lv, rv = list(frame[2 * n:3 * n]), list(frame[3 * n:4 * n])
+    return (_mirror_side(rp, neg_idx) + _mirror_side(lp, neg_idx)
+            + _mirror_side(rv, neg_idx) + _mirror_side(lv, neg_idx))
+
+
+def mirror_frame_gvec(frame, half, neg_idx=(0, 1)):
+    """Mirror extended frame: negate gvec Y, lateral vel, roll/yaw ang vel, swap dof."""
+    n = half
     gvec = list(frame[:3])
     lin_vel = list(frame[3:6])
     ang_vel = list(frame[6:9])
     root_z = frame[9]  # body height, unchanged when mirroring
-    lp = list(frame[10:15])
-    rp = list(frame[15:20])
-    lv = list(frame[20:25])
-    rv = list(frame[25:30])
+    lp = list(frame[10:10 + n])
+    rp = list(frame[10 + n:10 + 2 * n])
+    lv = list(frame[10 + 2 * n:10 + 3 * n])
+    rv = list(frame[10 + 3 * n:10 + 4 * n])
 
     # Mirror gvec: negate Y (left-right flip)
     mgvec = [gvec[0], -gvec[1], gvec[2]]
@@ -87,22 +97,25 @@ def mirror_frame_gvec(frame):
     # Mirror angular vel: negate roll and yaw components
     mang = [-ang_vel[0], ang_vel[1], -ang_vel[2]]
     # Mirror dof
-    mlp = [-rp[0], -rp[1], rp[2], rp[3], rp[4]]
-    mrp = [-lp[0], -lp[1], lp[2], lp[3], lp[4]]
-    mlv = [-rv[0], -rv[1], rv[2], rv[3], rv[4]]
-    mrv = [-lv[0], -lv[1], lv[2], lv[3], lv[4]]
+    mlp = _mirror_side(rp, neg_idx)
+    mrp = _mirror_side(lp, neg_idx)
+    mlv = _mirror_side(rv, neg_idx)
+    mrv = _mirror_side(lv, neg_idx)
     return mgvec + mlin + mang + [root_z] + mlp + mrp + mlv + mrv
 
 
-def pkl_to_amp_json(pkl_path, json_path, fps=50, mirror=False, use_gvec=False):
+def pkl_to_amp_json(pkl_path, json_path, fps=50, mirror=False, use_gvec=False,
+                    root_z_offset=0.0, mirror_neg=(0, 1)):
     with open(pkl_path, 'rb') as f:
         data = pickle.load(f)
     dof_pos = data["dof_pos"]
     N = len(dof_pos)
     dt = 1.0 / fps
 
-    left_pos = dof_pos[:, :5]
-    right_pos = dof_pos[:, 5:]
+    # Dynamic left/right split (works for any even dof count, e.g. 10 or 18)
+    half = dof_pos.shape[1] // 2
+    left_pos = dof_pos[:, :half]
+    right_pos = dof_pos[:, half:]
     left_vel = compute_velocity(left_pos, dt)
     right_vel = compute_velocity(right_pos, dt)
 
@@ -112,8 +125,8 @@ def pkl_to_amp_json(pkl_path, json_path, fps=50, mirror=False, use_gvec=False):
         # Gravity vector in body frame
         body_rot = R.from_quat(root_rot)  # body -> world (xyzw)
         gvec = body_rot.inv().apply([0, 0, -1])  # (N, 3)
-        # Body height above ground
-        root_z = root_pos[:, 2]  # (N,) Z position in world
+        # Body height above ground (optionally lowered to place feet on ground)
+        root_z = root_pos[:, 2] - root_z_offset  # (N,) Z position in world
         # Linear/angular velocity in world frame, then rotate to body frame
         body_lin_vel_world = compute_velocity(root_pos, dt)
         body_ang_vel_world = compute_angular_velocity(root_rot, dt)
@@ -133,7 +146,8 @@ def pkl_to_amp_json(pkl_path, json_path, fps=50, mirror=False, use_gvec=False):
             frame = left_pos[i].tolist() + right_pos[i].tolist() + left_vel[i].tolist() + right_vel[i].tolist()
 
         if mirror:
-            frame = mirror_frame_gvec(frame) if use_gvec else mirror_frame(frame)
+            frame = (mirror_frame_gvec(frame, half, mirror_neg) if use_gvec
+                     else mirror_frame(frame, half, mirror_neg))
         frames.append(frame)
 
     output = {
@@ -161,5 +175,13 @@ if __name__ == "__main__":
     parser.add_argument('--mirror', action='store_true', help='Mirror left/right')
     parser.add_argument('--gvec', action='store_true',
                         help='Include gravity vector + body lin/ang vel before dof data')
+    parser.add_argument('--root_z_offset', type=float, default=0.0,
+                        help='Amount to lower the body height (subtract from root_z), in meters')
+    parser.add_argument('--mirror_neg', type=str, default='0,1',
+                        help='Comma-separated joint indices within each side to negate when mirroring '
+                             '(e.g. yaw/roll). Default: 0,1 (leg hip_yaw, hip_roll)')
     args = parser.parse_args()
-    pkl_to_amp_json(args.input, args.output, args.fps, mirror=args.mirror, use_gvec=args.gvec)
+    neg_idx = tuple(int(x) for x in args.mirror_neg.split(',') if x.strip())
+    pkl_to_amp_json(args.input, args.output, args.fps, mirror=args.mirror,
+                    use_gvec=args.gvec, root_z_offset=args.root_z_offset,
+                    mirror_neg=neg_idx)
