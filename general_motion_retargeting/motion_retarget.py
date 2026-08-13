@@ -105,7 +105,8 @@ class GeneralMotionRetargeting:
             
         self.setup_retarget_configuration()
         
-        self.ground_offset = 0.0
+        self.ground_offset = ik_config.get("ground_offset", 0.0)
+        self.offset_to_ground = ik_config.get("offset_to_ground", False)
 
     def setup_retarget_configuration(self):
         self.configuration = mink.Configuration(self.model)
@@ -173,8 +174,10 @@ class GeneralMotionRetargeting:
                 task.set_target(mink.SE3.from_rotation_and_translation(mink.SO3(rot), pos))
             
             
-    def retarget(self, human_data, offset_to_ground=False):
+    def retarget(self, human_data, offset_to_ground=None):
         # Update the task targets
+        if offset_to_ground is None:
+            offset_to_ground = self.offset_to_ground
         self.update_targets(human_data, offset_to_ground)
 
         if self.use_ik_match_table1:
@@ -299,7 +302,6 @@ class GeneralMotionRetargeting:
     def offset_human_data_to_ground(self, human_data):
         """find the lowest point of the human data and offset the human data to the ground"""
         offset_human_data = {}
-        ground_offset = 0.1
         lowest_pos = np.inf
 
         for body_name in human_data.keys():
@@ -309,11 +311,10 @@ class GeneralMotionRetargeting:
             pos, quat = human_data[body_name]
             if pos[2] < lowest_pos:
                 lowest_pos = pos[2]
-                lowest_body_name = body_name
         for body_name in human_data.keys():
             pos, quat = human_data[body_name]
             offset_human_data[body_name] = [pos, quat]
-            offset_human_data[body_name][0] = pos - np.array([0, 0, lowest_pos]) + np.array([0, 0, ground_offset])
+            offset_human_data[body_name][0] = pos - np.array([0, 0, lowest_pos]) + np.array([0, 0, self.ground_offset])
         return offset_human_data
 
     def set_ground_offset(self, ground_offset):

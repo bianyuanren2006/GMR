@@ -9,6 +9,35 @@ from tqdm import tqdm
 import os
 import numpy as np
 
+
+LEFT_RIGHT_SWAP = {
+    'LeftUpLeg': 'RightUpLeg', 'RightUpLeg': 'LeftUpLeg',
+    'LeftLeg': 'RightLeg', 'RightLeg': 'LeftLeg',
+    'LeftFoot': 'RightFoot', 'RightFoot': 'LeftFoot',
+    'LeftToe': 'RightToe', 'RightToe': 'LeftToe',
+    'LeftFootMod': 'RightFootMod', 'RightFootMod': 'LeftFootMod',
+    'LeftShoulder': 'RightShoulder', 'RightShoulder': 'LeftShoulder',
+    'LeftArm': 'RightArm', 'RightArm': 'LeftArm',
+    'LeftForeArm': 'RightForeArm', 'RightForeArm': 'LeftForeArm',
+    'LeftHand': 'RightHand', 'RightHand': 'LeftHand',
+}
+
+
+def mirror_human_frame(frame):
+    """Mirror a human frame left-right about the sagittal plane (lateral Y axis).
+
+    Positions: negate Y. Quaternions (scalar-first, wxyz): negate X and Z
+    (a reflection of a rotation is a rotation about the reflected axis by the
+    negated angle -> q' = (-x, y, -z, w)). Left/right body names are swapped.
+    """
+    out = {}
+    for name, (pos, quat) in frame.items():
+        mname = LEFT_RIGHT_SWAP.get(name, name)
+        mpos = np.array([pos[0], -pos[1], pos[2]], dtype=np.float64)
+        mquat = np.array([quat[0], -quat[1], quat[2], -quat[3]], dtype=np.float64)
+        out[mname] = [mpos, mquat]
+    return out
+
 if __name__ == "__main__":
     
     HERE = pathlib.Path(__file__).parent
@@ -36,7 +65,7 @@ if __name__ == "__main__":
     
     parser.add_argument(
         "--robot",
-        choices=["unitree_g1", "unitree_g1_with_hands", "booster_t1", "stanford_toddy", "fourier_n1", "engineai_pm01", "pal_talos", "tinker_sdu", "mini"],
+        choices=["unitree_g1", "unitree_g1_with_hands", "booster_t1", "stanford_toddy", "fourier_n1", "engineai_pm01", "pal_talos", "tinker_sdu", "mini", "encos_sprint"],
         default="unitree_g1",
     )
     
@@ -63,6 +92,13 @@ if __name__ == "__main__":
         "--save_path",
         default=None,
         help="Path to save the robot motion.",
+    )
+
+    parser.add_argument(
+        "--mirror",
+        action="store_true",
+        default=False,
+        help="Mirror the human motion left-right before retargeting.",
     )
     
     parser.add_argument(
@@ -115,10 +151,14 @@ if __name__ == "__main__":
     # Start the viewer
     i = 0
     
-
+    # Warm up the IK on the first frame so the starting pose is consistent with
+    # the rest of the trajectory (avoids a frame-0 discontinuity from the default
+    # pose initialization).
+    if len(lafan1_data_frames) > 0:
+        warm = mirror_human_frame(lafan1_data_frames[0]) if args.mirror else lafan1_data_frames[0]
+        retargeter.retarget(warm)
 
     while True:
-        
         # FPS measurement
         fps_counter += 1
         current_time = time.time()
@@ -133,6 +173,8 @@ if __name__ == "__main__":
 
         # Update task targets.
         smplx_data = lafan1_data_frames[i]
+        if args.mirror:
+            smplx_data = mirror_human_frame(smplx_data)
 
         # retarget
         qpos = retargeter.retarget(smplx_data)
@@ -149,16 +191,16 @@ if __name__ == "__main__":
             # human_pos_offset=np.array([0.0, 0.0, 0.0])
         )
 
+        if args.save_path is not None:
+            qpos_list.append(qpos)
+
         if args.loop:
             i = (i + 1) % len(lafan1_data_frames)
         else:
             i += 1
             if i >= len(lafan1_data_frames):
                 break
-   
-        
-        if args.save_path is not None:
-            qpos_list.append(qpos)
+
     
     if args.save_path is not None:
         import pickle
