@@ -114,6 +114,44 @@ def compute_ee_positions(model, root_pos, root_rot_xyzw, dof_pos, ee_names):
     return ee_world
 
 
+def ground_clamp_positions(model, root_pos, root_rot_xyzw, dof_pos, smooth_window=1):
+    """Support-leg ground clamp: adjust the root height each frame so the LOWEST
+    foot contact point (the support leg) sits exactly on the ground (z = 0).
+    This keeps the support leg in contact with the ground, removing both floating
+    and dragging. When smooth_window > 1 the per-frame offset is smoothed with a
+    moving average so the body height does not jump between frames.
+
+    Reference: the ENCOS foot contact cylinders (radius 0.01, laid horizontally
+    with their length axis along X) live on the ankle bodies at ankle-local
+    z = -0.058 / -0.063, so the foot bottom is geom_z - 0.01 below the cylinder
+    centre (NOT the cylinder half-length 0.13).
+    """
+    data = mj.MjData(model)
+    ankles = [mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY, n)
+              for n in ('left_ankle_link', 'right_ankle_link')]
+    N = len(dof_pos)
+    root_pos = root_pos.copy()
+    offset = np.zeros(N)
+    for i in range(N):
+        q = np.concatenate([root_pos[i], root_rot_xyzw[i][[3, 0, 1, 2]], dof_pos[i]])
+        data.qpos[:] = q
+        mj.mj_forward(model, data)
+        lows = []
+        for a in ankles:
+            for g in range(model.body_geomadr[a], model.body_geomadr[a] + model.body_geomnum[a]):
+                if model.geom_type[g] == mj.mjtGeom.mjGEOM_CYLINDER:
+                    lows.append(data.geom_xpos[g][2] - 0.01)  # contact cylinder radius
+        if lows:
+            offset[i] = -min(lows)
+    if smooth_window > 1:
+        # moving-average smooth the offset (pad edges by repeating first/last)
+        k = np.ones(smooth_window) / smooth_window
+        padded = np.concatenate([np.full(smooth_window - 1, offset[0]), offset])
+        offset = np.convolve(padded, k, 'valid')[:N]
+    root_pos[:, 2] += offset
+    return root_pos
+
+
 def _mirror_side(values, neg_idx):
     """Negate the given indices (yaw/roll joints) within one side for left-right flip."""
     out = list(values)
@@ -159,6 +197,7 @@ def mirror_frame_73(frame, half, neg_idx=(0, 1)):
 
 
 def pkl_to_amp_json(pkl_path, json_path, fps=30, root_z_offset=0.0,
+                    ground_clamp=False, ground_smooth=1,
                     mirror=False, mirror_neg=(0, 1, 6, 7),
                     xml_path=DEFAULT_XML, ee_names=DEFAULT_EE):
     with open(pkl_path, 'rb') as f:
@@ -172,6 +211,10 @@ def pkl_to_amp_json(pkl_path, json_path, fps=30, root_z_offset=0.0,
 
     # FK end-effector world positions
     model = mj.MjModel.from_xml_path(xml_path)
+    if ground_clamp:
+        # support-leg ground clamp BEFORE FK/velocities so ee positions and
+        # velocities are computed from the corrected root height
+        root_pos = ground_clamp_positions(model, root_pos, root_rot, dof_pos, ground_smooth)
     ee_world = compute_ee_positions(model, root_pos, root_rot, dof_pos, ee_names)
 
     # Velocities (body frame)
@@ -225,6 +268,12 @@ if __name__ == "__main__":
     parser.add_argument('--fps', type=int, default=30)
     parser.add_argument('--root_z_offset', type=float, default=0.0,
                         help='Amount to lower the body height (subtract from root_z), meters')
+    parser.add_argument('--ground_clamp', action='store_true',
+                        help='Support-leg ground clamp: adjust root height so the lowest foot '
+                             '(support leg) stays on the ground every frame')
+    parser.add_argument('--ground_smooth', type=int, default=1,
+                        help='Moving-average window for smoothing the ground-clamp height offset '
+                             '(1 = no smoothing, e.g. 3/5 removes single-frame height jumps)')
     parser.add_argument('--mirror', action='store_true', help='Mirror left/right')
     parser.add_argument('--mirror_neg', type=str, default='0,1,6,7',
                         help='Joint indices (within each side) to negate when mirroring '
@@ -238,5 +287,7 @@ if __name__ == "__main__":
     ee = [e.strip() for e in args.ee.split(',') if e.strip()]
     pkl_to_amp_json(args.input, args.output, args.fps,
                     root_z_offset=args.root_z_offset,
+                    ground_clamp=args.ground_clamp,
+                    ground_smooth=args.ground_smooth,
                     mirror=args.mirror, mirror_neg=neg_idx,
                     xml_path=args.xml, ee_names=ee)
