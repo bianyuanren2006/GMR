@@ -1,4 +1,4 @@
-from general_motion_retargeting import RobotMotionViewer, load_robot_motion
+from general_motion_retargeting import RobotMotionViewer, load_robot_motion, ROBOT_BASE_DICT
 import argparse
 import os
 from tqdm import tqdm
@@ -14,6 +14,10 @@ if __name__ == "__main__":
                         default="videos/example.mp4")
     parser.add_argument("--play_speed", type=float, default=1.0,
                         help="Playback speed multiplier. 0.5 = half speed, 2.0 = double speed.")
+    parser.add_argument("--camera_follow", action="store_true", default=False,
+                        help="Camera keeps looking at the robot as it moves.")
+    parser.add_argument("--camera_track", action="store_true", default=False,
+                        help="Attach the camera to the robot base body (moves & rotates with it).")
                         
     args = parser.parse_args()
     
@@ -26,9 +30,11 @@ if __name__ == "__main__":
     motion_data, motion_fps, motion_root_pos, motion_root_rot, motion_dof_pos, motion_local_body_pos, motion_link_body_list = load_robot_motion(robot_motion_path)
     
     play_fps = motion_fps * args.play_speed
+    camera_track_body = ROBOT_BASE_DICT[robot_type] if args.camera_track else None
     env = RobotMotionViewer(robot_type=robot_type,
                             motion_fps=play_fps,
-                            camera_follow=False,
+                            camera_follow=args.camera_follow,
+                            camera_track_body=camera_track_body,
                             record_video=args.record_video, video_path=args.video_path)
     
     frame_idx = 0
@@ -37,7 +43,7 @@ if __name__ == "__main__":
                 motion_root_rot[frame_idx], 
                 motion_dof_pos[frame_idx], 
                 rate_limit=True,
-                follow_camera=False)
+                follow_camera=args.camera_follow or args.camera_track)
         frame_idx += 1
         if frame_idx >= len(motion_root_pos):
             frame_idx = 0

@@ -100,6 +100,13 @@ if __name__ == "__main__":
         default=False,
         help="Mirror the human motion left-right before retargeting.",
     )
+
+    parser.add_argument(
+        "--yaw_only_keep_pitch",
+        action="store_true",
+        default=False,
+        help="For yaw-only bodies, zero roll (side sway) but keep pitch (forward lean).",
+    )
     
     parser.add_argument(
         "--motion_fps",
@@ -126,6 +133,8 @@ if __name__ == "__main__":
         tgt_robot=args.robot,
         actual_human_height=actual_human_height,
     )
+    if args.yaw_only_keep_pitch:
+        retargeter.yaw_only_keep_pitch = True
 
     motion_fps = args.motion_fps
     

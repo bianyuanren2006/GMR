@@ -9,14 +9,14 @@
         "Hips"
     ],
     "human_scale_table": {
-        "Hips": 1.47,
-        "Spine2": 1.47,
-        "LeftUpLeg": 1.47,
-        "RightUpLeg": 1.47,
-        "LeftLeg": 1.47,
-        "RightLeg": 1.47,
-        "LeftFootMod": 1.47,
-        "RightFootMod": 1.47,
+        "Hips": 1.2,
+        "Spine2": 1.2,
+        "LeftUpLeg": 1.2,
+        "RightUpLeg": 1.2,
+        "LeftLeg": 1.2,
+        "RightLeg": 1.2,
+        "LeftFootMod": 1.2,
+        "RightFootMod": 1.2,
         "LeftArm": 1.0,
         "RightArm": 1.0,
         "LeftForeArm": 1.0,
@@ -379,5 +379,6 @@
                 0.0
             ]
         ]
-    }
+    },
+    "offset_to_ground": false
 }

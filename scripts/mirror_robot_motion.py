@@ -74,19 +74,42 @@ def mirror_pkl(pkl_path, out_path, xml_path=DEFAULT_XML):
     N = len(dof_pos)
     out_q = np.zeros((N, model.nq))
 
-    # Warm-start helper: sign-flip joints and mirror root orientation.
+    # ENCOS-Sprint actuator/dof order is NOT [left(9) | right(9)]; it is
+    #   [L_leg(5): yaw,roll,pitch,knee,ankle, R_leg(5): yaw,roll,pitch,knee,ankle,
+    #    L_arm(4): sh_pitch,sh_roll,sh_yaw,elbow, R_arm(4): sh_pitch,sh_roll,sh_yaw,elbow]
+    # So a left/right mirror must swap each L<->R partner explicitly. yaw/roll
+    # joints change sign; pitch/knee/ankle/elbow keep sign. Using a naive
+    # [L(9)|R(9)] split here breaks the first-frame initial guess -> the mirror
+    # IK lands in a wrong pose for the first 1-2 frames (weird start pose).
+    # dst index -> (src index of opposite-side partner, negate)
+    ENCOS_JOINT_MIRROR = {
+        0: (5, True), 1: (6, True), 2: (7, False), 3: (8, False), 4: (9, False),
+        5: (0, True), 6: (1, True), 7: (2, False), 8: (3, False), 9: (4, False),
+        10: (14, False), 11: (15, True), 12: (16, True), 13: (17, False),
+        14: (10, False), 15: (11, True), 16: (12, True), 17: (13, False),
+    }
+
+    def mirror_joints(jp):
+        out = jp.copy()
+        for dst, (src, negate) in ENCOS_JOINT_MIRROR.items():
+            v = jp[src]
+            out[dst] = -v if negate else v
+        return out
+
+    # Warm-start helper: mirror root (position + orientation) and mirror the
+    # joints with the explicit L<->R partner swap.  The root POSITION must be
+    # mirrored too (negate y): the target root sits ~2x the running
+    # displacement away from the un-mirrored root (e.g. +17m -> -17m), and
+    # with only 200 IK iterations the root cannot travel that far from an
+    # un-mirrored start -> first 1-2 frames come out misplaced (root
+    # teleports / pelvis drags on the ground).
     def initial_guess(i):
         q = np.concatenate([root_pos[i], root_rot[i][[3, 0, 1, 2]], dof_pos[i]])
+        q[:3] = np.array([q[0], -q[1], q[2]])   # mirror root position (negate y)
         # mirror root orientation: q wxyz -> negate x,z
         q[3:7] = np.array([q[3], -q[4], q[5], -q[6]])
-        # swap left/right joint blocks, negate yaw/roll
-        jp = q[7:].copy()
-        n = len(jp) // 2
-        L, Rr = jp[:n], jp[n:]
-        neg = [0, 1, 6, 7]
-        for j in neg:
-            L[j], Rr[j] = -Rr[j], -L[j]
-        q[7:] = np.concatenate([Rr, L])
+        # mirror the joints (explicit ENCOS L<->R partner swap)
+        q[7:] = mirror_joints(q[7:])
         return q
 
     for i in range(N):

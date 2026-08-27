@@ -26,6 +26,7 @@ ROBOT_XML_DICT = {
     "tinker_sdu": ASSET_ROOT / "tinker_lingzu_v3_sdu" / "nano_SDU.xml",
     "mini": ASSET_ROOT / "rl_boy_old_v2" / "mini_v1.xml",
     "encos_sprint": ASSET_ROOT / "ENCOS-Sprint" / "encos_spriint_v2.xml",
+    "encos_sprint_hands": ASSET_ROOT / "ENCOS-Sprint" / "encos_sprint_hands.xml",
 }
 
 IK_CONFIG_DICT = {
@@ -68,6 +69,10 @@ IK_CONFIG_DICT = {
         "unitree_g1": IK_CONFIG_ROOT / "bvh_xsens_to_g1.json",
         "unitree_h1_2": IK_CONFIG_ROOT / "bvh_xsens_to_h1_2.json",
     },
+    "bvh_cmu":{
+        "encos_sprint": IK_CONFIG_ROOT / "bvh_cmu_to_encos_sprint.json",
+        "encos_sprint_hands": IK_CONFIG_ROOT / "bvh_cmu_to_encos_sprint.json",
+    },
     "fbx":{
         "unitree_g1": IK_CONFIG_ROOT / "fbx_to_g1.json",
         "unitree_g1_with_hands": IK_CONFIG_ROOT / "fbx_to_g1.json",
@@ -107,6 +112,7 @@ ROBOT_BASE_DICT = {
     "tinker_sdu": "base_link",
     "mini": "base_link",
     "encos_sprint": "pelvis",
+    "encos_sprint_hands": "pelvis",
 }
 
 VIEWER_CAM_DISTANCE_DICT = {
@@ -131,4 +137,5 @@ VIEWER_CAM_DISTANCE_DICT = {
     "tinker_sdu": 1.5,
     "mini": 1.5,
     "encos_sprint": 2.5,
+    "encos_sprint_hands": 2.5,
 }

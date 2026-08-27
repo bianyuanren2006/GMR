@@ -46,6 +46,7 @@ class RobotMotionViewer:
     def __init__(self,
                 robot_type,
                 camera_follow=True,
+                camera_track_body=None,
                 motion_fps=30,
                 transparent_robot=0,
                 # video recording
@@ -67,6 +68,7 @@ class RobotMotionViewer:
         self.motion_fps = motion_fps
         self.rate_limiter = RateLimiter(frequency=self.motion_fps, warn=False)
         self.camera_follow = camera_follow
+        self.camera_track_body = camera_track_body
         self.record_video = record_video
 
 
@@ -124,10 +126,21 @@ class RobotMotionViewer:
         mj.mj_forward(self.model, self.data)
         
         if follow_camera:
-            self.viewer.cam.lookat = self.data.xpos[self.model.body(self.robot_base).id]
-            self.viewer.cam.distance = self.viewer_cam_distance
-            self.viewer.cam.elevation = -10  # 正面视角，轻微向下看
-            # self.viewer.cam.azimuth = 180    # 正面朝向机器人
+            if self.camera_track_body is not None:
+                # TRACKING camera: the camera is attached to the tracked body
+                # (moves and rotates with it), i.e. a chase/ego camera fixed to
+                # the robot.  azimuth=180 -> camera behind the robot looking in
+                # its forward direction; adjust interactively with the mouse.
+                self.viewer.cam.type = mj.mjtCamera.mjCAMERA_TRACKING
+                self.viewer.cam.trackbodyid = self.model.body(self.camera_track_body).id
+                self.viewer.cam.distance = self.viewer_cam_distance
+                self.viewer.cam.elevation = -10  # 轻微向下看
+                self.viewer.cam.azimuth = 180    # 背后视角，跟随机器人朝向
+            else:
+                self.viewer.cam.lookat = self.data.xpos[self.model.body(self.robot_base).id]
+                self.viewer.cam.distance = self.viewer_cam_distance
+                self.viewer.cam.elevation = -10  # 正面视角，轻微向下看
+                # self.viewer.cam.azimuth = 180    # 正面朝向机器人
         
         if human_motion_data is not None:
             # Clean custom geometry

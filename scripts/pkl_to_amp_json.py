@@ -142,7 +142,16 @@ def ground_clamp_positions(model, root_pos, root_rot_xyzw, dof_pos, smooth_windo
                 if model.geom_type[g] == mj.mjtGeom.mjGEOM_CYLINDER:
                     lows.append(data.geom_xpos[g][2] - 0.01)  # contact cylinder radius
         if lows:
+<<<<<<< Updated upstream
             offset[i] = -min(lows)
+=======
+            # Only LIFT the root when the lowest foot is BELOW the ground
+            # (penetration); never LOWER it when both feet are above ground
+            # (running flight phase).  The old `-min(lows)` pulled the root
+            # DOWN during flight, slamming the feet into the ground on landing
+            # (penetration down to the ankle).
+            offset[i] = max(0.0, -min(lows))
+>>>>>>> Stashed changes
     if smooth_window > 1:
         # moving-average smooth the offset (pad edges by repeating first/last)
         k = np.ones(smooth_window) / smooth_window
@@ -152,18 +161,49 @@ def ground_clamp_positions(model, root_pos, root_rot_xyzw, dof_pos, smooth_windo
     return root_pos
 
 
+<<<<<<< Updated upstream
 def _mirror_side(values, neg_idx):
     """Negate the given indices (yaw/roll joints) within one side for left-right flip."""
     out = list(values)
     for i in neg_idx:
         if i < len(out):
             out[i] = -out[i]
+=======
+# ENCOS-Sprint actuator/dof order (from URDF / MuJoCo):
+#   [L_hip_yaw, L_hip_roll, L_hip_pitch, L_knee, L_ankle,
+#    R_hip_yaw, R_hip_roll, R_hip_pitch, R_knee, R_ankle,
+#    L_sh_pitch, L_sh_roll, L_sh_yaw, L_elbow,
+#    R_sh_pitch, R_sh_roll, R_sh_yaw, R_elbow]
+# i.e. NOT [left(9) | right(9)] -> the mirror must swap each L<->R partner
+# explicitly. Under a left-right flip, yaw/roll joints change sign and
+# pitch joints keep sign.
+# destination index -> (source index of opposite-side partner, negate)
+_ENCOS_JOINT_MIRROR = {
+    0: (5, True), 1: (6, True), 2: (7, False), 3: (8, False), 4: (9, False),   # L leg <- R leg
+    5: (0, True), 6: (1, True), 7: (2, False), 8: (3, False), 9: (4, False),   # R leg <- L leg
+    10: (14, False), 11: (15, True), 12: (16, True), 13: (17, False),          # L arm <- R arm
+    14: (10, False), 15: (11, True), 16: (12, True), 17: (13, False),          # R arm <- L arm
+}
+
+
+def _mirror_encos_joints(values):
+    """Mirror an 18-value joint_pos/joint_vel block for the ENCOS-Sprint dof order."""
+    out = [0.0] * len(values)
+    for dst, (src, negate) in _ENCOS_JOINT_MIRROR.items():
+        v = values[src]
+        out[dst] = -v if negate else v
+>>>>>>> Stashed changes
     return out
 
 
 def mirror_frame_73(frame, half, neg_idx=(0, 1)):
     """Mirror a 73-value frame (left-right flip about the XZ plane).
-    Layout: root_pos(3) root_rot(4) joint_pos(2h) toe_pos(12) lin(3) ang(3) joint_vel(2h) toe_vel(12).
+    Layout: root_pos(3) root_rot(4) joint_pos(18) toe_pos(12) lin(3) ang(3)
+            joint_vel(18) toe_vel(12).
+
+    The `half`/`neg_idx` arguments are accepted for backwards compatibility but
+    are not used: joint mirroring follows the explicit ENCOS-Sprint dof order
+    in `_ENCOS_JOINT_MIRROR`.
     """
     n = half
     root_pos = list(frame[0:3])
@@ -175,10 +215,8 @@ def mirror_frame_73(frame, half, neg_idx=(0, 1)):
     joint_vel = list(frame[25 + 2 * n:25 + 4 * n])
     toe_vel = np.array(frame[25 + 4 * n:37 + 4 * n]).reshape(4, 3)
 
-    lp, rp = joint_pos[:n], joint_pos[n:]
-    lv, rv = joint_vel[:n], joint_vel[n:]
-    mjoint_pos = _mirror_side(rp, neg_idx) + _mirror_side(lp, neg_idx)
-    mjoint_vel = _mirror_side(rv, neg_idx) + _mirror_side(lv, neg_idx)
+    mjoint_pos = _mirror_encos_joints(joint_pos)
+    mjoint_vel = _mirror_encos_joints(joint_vel)
 
     # end-effectors: [L_ankle, R_ankle, L_elbow, R_elbow] -> swap pairs, negate y
     mtoe_pos = toe_pos[[1, 0, 3, 2]].copy()

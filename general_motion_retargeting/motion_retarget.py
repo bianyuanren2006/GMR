@@ -82,6 +82,10 @@ class GeneralMotionRetargeting:
 
         # Bodies that should only track yaw (facing direction), ignoring pitch/roll
         self.yaw_only_bodies = set(ik_config.get("yaw_only_bodies", []))
+        # If True, yaw-only bodies keep pitch (forward lean) and only zero roll
+        # (left-right sway). Useful for sprinting where natural forward lean is
+        # desired but side-to-side sway is not.
+        self.yaw_only_keep_pitch = ik_config.get("yaw_only_keep_pitch", False)
 
         self.max_iter = 10
 
@@ -283,11 +287,14 @@ class GeneralMotionRetargeting:
             # apply rotation offset first
             updated_quat = (R.from_quat(quat, scalar_first=True) * rot_offsets[body_name]).as_quat(scalar_first=True)
             # For yaw-only bodies, keep only the facing direction (Z rotation),
-            # zero out pitch (Y) and roll (X) to avoid body sway
+            # zero out pitch (Y) and roll (X) to avoid body sway. If
+            # yaw_only_keep_pitch is set, keep pitch (forward lean) and only zero
+            # roll (left-right sway).
             if body_name in self.yaw_only_bodies:
                 euler = R.from_quat(updated_quat, scalar_first=True).as_euler('ZYX')
-                euler[1] = 0.0  # pitch = 0
-                euler[2] = 0.0  # roll = 0
+                euler[2] = 0.0  # roll = 0 (always suppress side sway)
+                if not self.yaw_only_keep_pitch:
+                    euler[1] = 0.0  # pitch = 0 (only if keep_pitch is off)
                 updated_quat = R.from_euler('ZYX', euler).as_quat(scalar_first=True)
             offset_human_data[body_name][1] = updated_quat
             
