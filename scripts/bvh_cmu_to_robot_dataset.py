@@ -77,6 +77,13 @@ def main():
         help="Drop the corrupted first frame of each clip (default: drop).",
     )
     parser.add_argument(
+        "--no_hip_smooth",
+        default=False,
+        action="store_true",
+        help="Disable the Savitzky-Golay smoothing applied to the hip yaw/roll "
+             "joints (keeps the raw retargeted hip values).",
+    )
+    parser.add_argument(
         "--override",
         default=False,
         action="store_true",
@@ -163,7 +170,7 @@ def main():
             # L_hip_pitch, L_knee, L_ankle, R_hip_yaw, R_hip_roll, ...].
             # Window 21 (0.5 s @ 40 fps) is long enough to kill the residual
             # 0.2-0.3 rad/frame hip-yaw spikes without blurring the stride.
-            if num_frames >= 21:
+            if not args.no_hip_smooth and num_frames >= 21:
                 for j in (0, 1, 5, 6):  # hip yaw + hip roll, both legs
                     dof_pos[:, j] = savgol_filter(
                         dof_pos[:, j], window_length=21, polyorder=3

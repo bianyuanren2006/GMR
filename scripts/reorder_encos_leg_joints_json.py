@@ -19,7 +19,7 @@ import glob
 import json
 import os
 
-# Current joint order (from encos_spriint_v2.xml, matches pkl dof order).
+# Current joint order (from encos_sprint_v2.xml, matches pkl dof order).
 CURRENT = [
     'L_hip_yaw', 'L_hip_roll', 'L_hip_pitch', 'L_knee', 'L_ankle',
     'R_hip_yaw', 'R_hip_roll', 'R_hip_pitch', 'R_knee', 'R_ankle',

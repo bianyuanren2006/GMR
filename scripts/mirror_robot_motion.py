@@ -17,12 +17,22 @@ import mujoco as mj
 import mink
 
 
-DEFAULT_XML = 'assets/ENCOS-Sprint/encos_spriint_v2.xml'
+DEFAULT_XML = 'assets/ENCOS-Sprint/encos_sprint_v2.xml'
 # Bodies tracked by the ENCOS IK config (order must match ik_match_table).
 BODIES = [
     'pelvis',
     'left_hip_pitch_link', 'left_knee_link', 'left_ankle_link',
     'right_hip_pitch_link', 'right_knee_link', 'right_ankle_link',
+    'left_shoulder_pitch_link', 'left_elbow_link',
+    'right_shoulder_pitch_link', 'right_elbow_link',
+]
+# 19dof: adds the torso/waist link (self-mirrored) which is not tracked by the
+# 18dof config but must be tracked so the IK re-solve keeps the torso pose.
+BODIES_19 = [
+    'pelvis',
+    'left_hip_pitch_link', 'left_knee_link', 'left_ankle_link',
+    'right_hip_pitch_link', 'right_knee_link', 'right_ankle_link',
+    'waist_link',
     'left_shoulder_pitch_link', 'left_elbow_link',
     'right_shoulder_pitch_link', 'right_elbow_link',
 ]
@@ -43,6 +53,8 @@ MIRROR_SRC = {
     'left_elbow_link': 'right_elbow_link',
     'right_elbow_link': 'left_elbow_link',
 }
+MIRROR_SRC_19 = dict(MIRROR_SRC)
+MIRROR_SRC_19['waist_link'] = 'waist_link'
 
 
 def mirror_pose(pos, quat_xyzw):
@@ -54,21 +66,24 @@ def mirror_pose(pos, quat_xyzw):
     return mpos, mquat
 
 
-def mirror_pkl(pkl_path, out_path, xml_path=DEFAULT_XML):
+def mirror_pkl(pkl_path, out_path, xml_path=DEFAULT_XML, dof19=False):
     with open(pkl_path, 'rb') as f:
         data = pickle.load(f)
     root_pos = np.asarray(data['root_pos'], dtype=np.float64)
     root_rot = np.asarray(data['root_rot'], dtype=np.float64)   # xyzw
     dof_pos = np.asarray(data['dof_pos'], dtype=np.float64)
 
+    bodies = BODIES_19 if dof19 else BODIES
+    mirror_src = MIRROR_SRC_19 if dof19 else MIRROR_SRC
+
     model = mj.MjModel.from_xml_path(xml_path)
     config = mink.Configuration(model)
-    body_ids = {b: mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY, b) for b in BODIES}
+    body_ids = {b: mj.mj_name2id(model, mj.mjtObj.mjOBJ_BODY, b) for b in bodies}
 
     tasks = [
         mink.FrameTask(frame_name=b, frame_type='body',
                        position_cost=100.0, orientation_cost=100.0, lm_damping=1)
-        for b in BODIES
+        for b in bodies
     ]
 
     N = len(dof_pos)
@@ -77,10 +92,10 @@ def mirror_pkl(pkl_path, out_path, xml_path=DEFAULT_XML):
     # ENCOS-Sprint actuator/dof order is NOT [left(9) | right(9)]; it is
     #   [L_leg(5): yaw,roll,pitch,knee,ankle, R_leg(5): yaw,roll,pitch,knee,ankle,
     #    L_arm(4): sh_pitch,sh_roll,sh_yaw,elbow, R_arm(4): sh_pitch,sh_roll,sh_yaw,elbow]
-    # So a left/right mirror must swap each L<->R partner explicitly. yaw/roll
-    # joints change sign; pitch/knee/ankle/elbow keep sign. Using a naive
-    # [L(9)|R(9)] split here breaks the first-frame initial guess -> the mirror
-    # IK lands in a wrong pose for the first 1-2 frames (weird start pose).
+    # (19dof inserts `waist` between the legs and the arms).  So a left/right
+    # mirror must swap each L<->R partner explicitly. yaw/roll joints change
+    # sign; pitch/knee/ankle/elbow keep sign. `waist` (idx 10 in 19dof) is a
+    # torso twist around the vertical axis and keeps its sign (self-mirrored).
     # dst index -> (src index of opposite-side partner, negate)
     ENCOS_JOINT_MIRROR = {
         0: (5, True), 1: (6, True), 2: (7, False), 3: (8, False), 4: (9, False),
@@ -88,10 +103,18 @@ def mirror_pkl(pkl_path, out_path, xml_path=DEFAULT_XML):
         10: (14, False), 11: (15, True), 12: (16, True), 13: (17, False),
         14: (10, False), 15: (11, True), 16: (12, True), 17: (13, False),
     }
+    ENCOS_JOINT_MIRROR_19 = {
+        0: (5, True), 1: (6, True), 2: (7, False), 3: (8, False), 4: (9, False),
+        5: (0, True), 6: (1, True), 7: (2, False), 8: (3, False), 9: (4, False),
+        10: (10, False),  # waist: self-mirrored, keep sign
+        11: (15, False), 12: (16, True), 13: (17, True), 14: (18, False),  # L arm
+        15: (11, False), 16: (12, True), 17: (13, True), 18: (14, False),  # R arm
+    }
+    joint_mirror = ENCOS_JOINT_MIRROR_19 if dof19 else ENCOS_JOINT_MIRROR
 
     def mirror_joints(jp):
         out = jp.copy()
-        for dst, (src, negate) in ENCOS_JOINT_MIRROR.items():
+        for dst, (src, negate) in joint_mirror.items():
             v = jp[src]
             out[dst] = -v if negate else v
         return out
@@ -117,8 +140,8 @@ def mirror_pkl(pkl_path, out_path, xml_path=DEFAULT_XML):
         q0 = np.concatenate([root_pos[i], root_rot[i][[3, 0, 1, 2]], dof_pos[i]])
         config.data.qpos[:] = q0
         config.update()
-        for t, b in zip(tasks, BODIES):
-            src = MIRROR_SRC[b]
+        for t, b in zip(tasks, bodies):
+            src = mirror_src[b]
             bid = body_ids[src]
             pos = config.data.xpos[bid]
             orn_wxyz = config.data.xquat[bid]
@@ -152,5 +175,7 @@ if __name__ == '__main__':
     parser.add_argument('--input', required=True)
     parser.add_argument('--output', required=True)
     parser.add_argument('--xml', type=str, default=DEFAULT_XML)
+    parser.add_argument('--dof19', action='store_true',
+                        help='19dof ENCOS (adds waist_link body + waist dof).')
     args = parser.parse_args()
-    mirror_pkl(args.input, args.output, args.xml)
+    mirror_pkl(args.input, args.output, args.xml, dof19=args.dof19)

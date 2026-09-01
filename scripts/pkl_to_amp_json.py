@@ -27,7 +27,7 @@ import numpy as np
 import mujoco as mj
 
 
-DEFAULT_XML = 'assets/ENCOS-Sprint/encos_spriint_v2.xml'
+DEFAULT_XML = 'assets/ENCOS-Sprint/encos_sprint_v2.xml'
 DEFAULT_ROOT_BODY = 'pelvis'
 DEFAULT_EE = ['left_ankle_link', 'right_ankle_link', 'left_elbow_link', 'right_elbow_link']
 
@@ -142,16 +142,12 @@ def ground_clamp_positions(model, root_pos, root_rot_xyzw, dof_pos, smooth_windo
                 if model.geom_type[g] == mj.mjtGeom.mjGEOM_CYLINDER:
                     lows.append(data.geom_xpos[g][2] - 0.01)  # contact cylinder radius
         if lows:
-<<<<<<< Updated upstream
-            offset[i] = -min(lows)
-=======
             # Only LIFT the root when the lowest foot is BELOW the ground
             # (penetration); never LOWER it when both feet are above ground
             # (running flight phase).  The old `-min(lows)` pulled the root
             # DOWN during flight, slamming the feet into the ground on landing
             # (penetration down to the ankle).
             offset[i] = max(0.0, -min(lows))
->>>>>>> Stashed changes
     if smooth_window > 1:
         # moving-average smooth the offset (pad edges by repeating first/last)
         k = np.ones(smooth_window) / smooth_window
@@ -161,14 +157,6 @@ def ground_clamp_positions(model, root_pos, root_rot_xyzw, dof_pos, smooth_windo
     return root_pos
 
 
-<<<<<<< Updated upstream
-def _mirror_side(values, neg_idx):
-    """Negate the given indices (yaw/roll joints) within one side for left-right flip."""
-    out = list(values)
-    for i in neg_idx:
-        if i < len(out):
-            out[i] = -out[i]
-=======
 # ENCOS-Sprint actuator/dof order (from URDF / MuJoCo):
 #   [L_hip_yaw, L_hip_roll, L_hip_pitch, L_knee, L_ankle,
 #    R_hip_yaw, R_hip_roll, R_hip_pitch, R_knee, R_ankle,
@@ -185,38 +173,44 @@ _ENCOS_JOINT_MIRROR = {
     14: (10, False), 15: (11, True), 16: (12, True), 17: (13, False),          # R arm <- L arm
 }
 
+# 19dof: waist (idx 10) sits between the legs and arms and is self-mirrored
+# (torso twist around the vertical axis keeps its sign); the arms shift by 1.
+_ENCOS_JOINT_MIRROR_19 = {
+    0: (5, True), 1: (6, True), 2: (7, False), 3: (8, False), 4: (9, False),  # L leg <- R leg
+    5: (0, True), 6: (1, True), 7: (2, False), 8: (3, False), 9: (4, False),  # R leg <- L leg
+    10: (10, False),                                                          # waist (self)
+    11: (15, False), 12: (16, True), 13: (17, True), 14: (18, False),         # L arm <- R arm
+    15: (11, False), 16: (12, True), 17: (13, True), 18: (14, False),         # R arm <- L arm
+}
 
-def _mirror_encos_joints(values):
-    """Mirror an 18-value joint_pos/joint_vel block for the ENCOS-Sprint dof order."""
+
+def _mirror_encos_joints(values, njoints=18):
+    """Mirror an njoint-value joint_pos/joint_vel block for the ENCOS-Sprint dof order."""
+    table = _ENCOS_JOINT_MIRROR_19 if njoints == 19 else _ENCOS_JOINT_MIRROR
     out = [0.0] * len(values)
-    for dst, (src, negate) in _ENCOS_JOINT_MIRROR.items():
+    for dst, (src, negate) in table.items():
         v = values[src]
         out[dst] = -v if negate else v
->>>>>>> Stashed changes
     return out
 
 
-def mirror_frame_73(frame, half, neg_idx=(0, 1)):
-    """Mirror a 73-value frame (left-right flip about the XZ plane).
-    Layout: root_pos(3) root_rot(4) joint_pos(18) toe_pos(12) lin(3) ang(3)
-            joint_vel(18) toe_vel(12).
-
-    The `half`/`neg_idx` arguments are accepted for backwards compatibility but
-    are not used: joint mirroring follows the explicit ENCOS-Sprint dof order
-    in `_ENCOS_JOINT_MIRROR`.
+def mirror_frame(frame, njoints=18, neg_idx=(0, 1)):
+    """Mirror a (4*njoints+1+4*4)-value frame (left-right flip about the XZ plane).
+    Layout: root_pos(3) root_rot(4) joint_pos(n) toe_pos(12) lin(3) ang(3)
+            joint_vel(n) toe_vel(12)  -> total = 7 + 2*n + 12 + 6 + 12 = 37 + 2*n.
     """
-    n = half
+    n = njoints
     root_pos = list(frame[0:3])
     root_rot = list(frame[3:7])  # xyzw
-    joint_pos = list(frame[7:7 + 2 * n])
-    toe_pos = np.array(frame[7 + 2 * n:19 + 2 * n]).reshape(4, 3)
-    lin_vel = list(frame[19 + 2 * n:22 + 2 * n])
-    ang_vel = list(frame[22 + 2 * n:25 + 2 * n])
-    joint_vel = list(frame[25 + 2 * n:25 + 4 * n])
-    toe_vel = np.array(frame[25 + 4 * n:37 + 4 * n]).reshape(4, 3)
+    joint_pos = list(frame[7:7 + n])
+    toe_pos = np.array(frame[7 + n:19 + n]).reshape(4, 3)
+    lin_vel = list(frame[19 + n:22 + n])
+    ang_vel = list(frame[22 + n:25 + n])
+    joint_vel = list(frame[25 + n:25 + 2 * n])
+    toe_vel = np.array(frame[25 + 2 * n:37 + 2 * n]).reshape(4, 3)
 
-    mjoint_pos = _mirror_encos_joints(joint_pos)
-    mjoint_vel = _mirror_encos_joints(joint_vel)
+    mjoint_pos = _mirror_encos_joints(joint_pos, njoints)
+    mjoint_vel = _mirror_encos_joints(joint_vel, njoints)
 
     # end-effectors: [L_ankle, R_ankle, L_elbow, R_elbow] -> swap pairs, negate y
     mtoe_pos = toe_pos[[1, 0, 3, 2]].copy()
@@ -237,15 +231,18 @@ def mirror_frame_73(frame, half, neg_idx=(0, 1)):
 def pkl_to_amp_json(pkl_path, json_path, fps=30, root_z_offset=0.0,
                     ground_clamp=False, ground_smooth=1,
                     mirror=False, mirror_neg=(0, 1, 6, 7),
-                    xml_path=DEFAULT_XML, ee_names=DEFAULT_EE):
+                    xml_path=DEFAULT_XML, ee_names=DEFAULT_EE, njoints=18):
     with open(pkl_path, 'rb') as f:
         data = pickle.load(f)
     root_pos = np.asarray(data["root_pos"], dtype=np.float64)   # (N,3)
     root_rot = np.asarray(data["root_rot"], dtype=np.float64)   # (N,4) xyzw
-    dof_pos = np.asarray(data["dof_pos"], dtype=np.float64)     # (N,18)
+    dof_pos = np.asarray(data["dof_pos"], dtype=np.float64)     # (N,njoints)
     N = len(dof_pos)
     dt = 1.0 / fps
-    half = dof_pos.shape[1] // 2
+    n = dof_pos.shape[1]
+    if njoints is None:
+        njoints = n
+    half = njoints  # per-side joint count for the mirror layout
 
     # FK end-effector world positions
     model = mj.MjModel.from_xml_path(xml_path)
@@ -279,7 +276,7 @@ def pkl_to_amp_json(pkl_path, json_path, fps=30, root_z_offset=0.0,
                  + list(body_lin[i]) + list(body_ang[i]) + list(dof_vel[i])
                  + ee_body_vel[i].reshape(-1).tolist())
         if mirror:
-            frame = mirror_frame_73(frame, half, mirror_neg)
+            frame = mirror_frame(frame, njoints, mirror_neg)
         frames.append(frame)
 
     output = {
@@ -320,6 +317,9 @@ if __name__ == "__main__":
                         help='MuJoCo XML for FK end-effector positions')
     parser.add_argument('--ee', type=str, default=','.join(DEFAULT_EE),
                         help='Comma-separated end-effector body names')
+    parser.add_argument('--njoints', type=int, default=None,
+                        help='Number of joints (18=default 73-val frames, 19=75-val 19dof frames). '
+                             'Auto-detected from the pkl if omitted.')
     args = parser.parse_args()
     neg_idx = tuple(int(x) for x in args.mirror_neg.split(',') if x.strip())
     ee = [e.strip() for e in args.ee.split(',') if e.strip()]
@@ -328,4 +328,4 @@ if __name__ == "__main__":
                     ground_clamp=args.ground_clamp,
                     ground_smooth=args.ground_smooth,
                     mirror=args.mirror, mirror_neg=neg_idx,
-                    xml_path=args.xml, ee_names=ee)
+                    xml_path=args.xml, ee_names=ee, njoints=args.njoints)
