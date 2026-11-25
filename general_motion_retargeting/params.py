@@ -63,6 +63,9 @@ IK_CONFIG_DICT = {
         "mini": IK_CONFIG_ROOT / "bvh_lafan1_to_mini.json",
         "encos_sprint": IK_CONFIG_ROOT / "bvh_lafan1_to_encos_sprint.json",
     },
+    "bvh_mocap":{
+        "unitree_g1": IK_CONFIG_ROOT / "bvh_mocap_to_g1.json",
+    },
     "bvh_nokov":{
         "unitree_g1": IK_CONFIG_ROOT / "bvh_nokov_to_g1.json",
     },
